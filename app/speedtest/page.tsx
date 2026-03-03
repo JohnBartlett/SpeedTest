@@ -119,6 +119,16 @@ function median(values: Array<number | null>): number | null {
   return (valid[mid - 1] + valid[mid]) / 2;
 }
 
+function hasMeasuredData(run: SpeedResults): boolean {
+  return (
+    run.downloadMbps !== null ||
+    run.uploadMbps !== null ||
+    run.latencyMs !== null ||
+    run.jitterMs !== null ||
+    run.packetLossPercent !== null
+  );
+}
+
 export default function SpeedTestPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState("Idle");
@@ -197,6 +207,7 @@ export default function SpeedTestPage() {
         ],
       });
       let finishedViaCallback = false;
+      let savedRun = false;
 
       test.onProgress = (payload) => {
         const text = JSON.stringify(payload).toLowerCase();
@@ -221,7 +232,10 @@ export default function SpeedTestPage() {
         finishedViaCallback = true;
         const run = readResults({ ...test, results: finalResults ?? test.results });
         setResults(run);
-        saveRun(run);
+        if (!savedRun && hasMeasuredData(run)) {
+          saveRun(run);
+          savedRun = true;
+        }
         setStatus("Finished");
         setIsRunning(false);
       };
@@ -240,7 +254,10 @@ export default function SpeedTestPage() {
       if (!finishedViaCallback) {
         setResults((prev) => {
           const next = readResults(test);
-          if (JSON.stringify(next) !== JSON.stringify(EMPTY_RESULTS)) saveRun(next);
+          if (!savedRun && hasMeasuredData(next)) {
+            saveRun(next);
+            savedRun = true;
+          }
           return JSON.stringify(next) === JSON.stringify(EMPTY_RESULTS) ? prev : next;
         });
         setStatus("Finished");
