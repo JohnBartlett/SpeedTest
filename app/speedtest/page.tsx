@@ -206,7 +206,6 @@ export default function SpeedTestPage() {
           { type: "upload", bytes: 50_000_000, count: 2 },
         ],
       });
-      let finishedViaCallback = false;
       let savedRun = false;
 
       test.onProgress = (payload) => {
@@ -229,7 +228,6 @@ export default function SpeedTestPage() {
       };
 
       test.onFinish = (finalResults) => {
-        finishedViaCallback = true;
         const run = readResults({ ...test, results: finalResults ?? test.results });
         setResults(run);
         if (!savedRun && hasMeasuredData(run)) {
@@ -248,20 +246,6 @@ export default function SpeedTestPage() {
         await test.run();
       } else {
         throw new Error("SpeedTest instance does not expose start/play/run");
-      }
-
-      // Some versions resolve without calling onFinish synchronously.
-      if (!finishedViaCallback) {
-        setResults((prev) => {
-          const next = readResults(test);
-          if (!savedRun && hasMeasuredData(next)) {
-            saveRun(next);
-            savedRun = true;
-          }
-          return JSON.stringify(next) === JSON.stringify(EMPTY_RESULTS) ? prev : next;
-        });
-        setStatus("Finished");
-        setIsRunning(false);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
