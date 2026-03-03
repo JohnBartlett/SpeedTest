@@ -10,6 +10,10 @@ type SpeedResults = {
   packetLossPercent: number | null;
 };
 
+type SpeedRun = SpeedResults & {
+  finishedAt: string;
+};
+
 type SpeedSummaryLike = {
   download?: number;
   upload?: number;
@@ -107,10 +111,19 @@ function format(value: number | null, digits = 2): string {
   return value === null ? "N/A" : value.toFixed(digits);
 }
 
+function median(values: Array<number | null>): number | null {
+  const valid = values.filter((v): v is number => v !== null).sort((a, b) => a - b);
+  if (!valid.length) return null;
+  const mid = Math.floor(valid.length / 2);
+  if (valid.length % 2) return valid[mid];
+  return (valid[mid - 1] + valid[mid]) / 2;
+}
+
 export default function SpeedTestPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState("Idle");
   const [results, setResults] = useState<SpeedResults>(EMPTY_RESULTS);
+  const [history, setHistory] = useState<SpeedRun[]>([]);
 
   const rows = useMemo(
     () => [
@@ -128,6 +141,25 @@ export default function SpeedTestPage() {
     ],
     [results]
   );
+
+  const medians = useMemo(
+    () => ({
+      downloadMbps: median(history.map((r) => r.downloadMbps)),
+      uploadMbps: median(history.map((r) => r.uploadMbps)),
+      latencyMs: median(history.map((r) => r.latencyMs)),
+      jitterMs: median(history.map((r) => r.jitterMs)),
+      packetLossPercent: median(history.map((r) => r.packetLossPercent)),
+    }),
+    [history]
+  );
+
+  function saveRun(run: SpeedResults) {
+    const entry: SpeedRun = {
+      ...run,
+      finishedAt: new Date().toLocaleTimeString(),
+    };
+    setHistory((prev) => [entry, ...prev].slice(0, 5));
+  }
 
   async function runSpeedTest() {
     setIsRunning(true);
@@ -187,7 +219,9 @@ export default function SpeedTestPage() {
 
       test.onFinish = (finalResults) => {
         finishedViaCallback = true;
-        setResults(readResults({ ...test, results: finalResults ?? test.results }));
+        const run = readResults({ ...test, results: finalResults ?? test.results });
+        setResults(run);
+        saveRun(run);
         setStatus("Finished");
         setIsRunning(false);
       };
@@ -206,6 +240,7 @@ export default function SpeedTestPage() {
       if (!finishedViaCallback) {
         setResults((prev) => {
           const next = readResults(test);
+          if (JSON.stringify(next) !== JSON.stringify(EMPTY_RESULTS)) saveRun(next);
           return JSON.stringify(next) === JSON.stringify(EMPTY_RESULTS) ? prev : next;
         });
         setStatus("Finished");
@@ -241,6 +276,9 @@ export default function SpeedTestPage() {
         <h1 style={{ margin: 0, fontSize: 28, lineHeight: 1.2, color: "#0f172a" }}>
           Internet Speed Test
         </h1>
+        <p style={{ marginTop: 8, marginBottom: 0, color: "#475569", fontSize: 13 }}>
+          Browser to Cloudflare edge
+        </p>
 
         <p style={{ marginTop: 12, marginBottom: 16, color: "#334155", fontSize: 14 }}>
           Status: {status}
@@ -294,6 +332,38 @@ export default function SpeedTestPage() {
             </div>
           ))}
         </dl>
+
+        <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "#f8fafc" }}>
+          <p style={{ margin: 0, marginBottom: 8, fontSize: 13, color: "#334155", fontWeight: 700 }}>
+            Median of last {history.length || 0} run(s)
+          </p>
+          <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+            Download {format(medians.downloadMbps)} Mbps, Upload {format(medians.uploadMbps)} Mbps,
+            Latency {format(medians.latencyMs)} ms, Jitter {format(medians.jitterMs)} ms, Packet
+            loss{" "}
+            {medians.packetLossPercent === null
+              ? "N/A"
+              : `${medians.packetLossPercent.toFixed(2)} %`}
+          </p>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <p style={{ margin: 0, marginBottom: 8, fontSize: 13, color: "#334155", fontWeight: 700 }}>
+            Last 5 runs
+          </p>
+          {history.length === 0 ? (
+            <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>No completed runs yet.</p>
+          ) : (
+            <ol style={{ margin: 0, paddingLeft: 18, color: "#334155", fontSize: 13, lineHeight: 1.6 }}>
+              {history.map((run, idx) => (
+                <li key={`${run.finishedAt}-${idx}`}>
+                  {run.finishedAt}: D {format(run.downloadMbps)} / U {format(run.uploadMbps)} Mbps,
+                  L {format(run.latencyMs)} ms
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
 
         <p style={{ marginTop: 14, marginBottom: 0, fontSize: 12, color: "#64748b" }}>
           Results reflect browser-to-Cloudflare-edge performance and can vary by device,
