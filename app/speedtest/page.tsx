@@ -23,7 +23,7 @@ type SpeedSummaryLike = {
 };
 
 type SpeedTestLike = {
-  onFinish?: (() => void) | null;
+  onFinish?: ((results?: SpeedResultsReader) => void) | null;
   onProgress?: ((payload: unknown) => void) | null;
   onError?: ((error: unknown) => void) | null;
   onResultsChange?: ((payload: unknown) => void) | null;
@@ -146,13 +146,22 @@ export default function SpeedTestPage() {
         throw new Error("Could not load speed test constructor");
       }
 
-      // Create a test instance with practical defaults for mobile-friendly runtime.
+      // Create a test instance with valid measurement objects (bytes is a number per step).
+      // This ramp-up sequence is closer to Cloudflare defaults and is more reliable on fast links.
       const test = new SpeedTestCtor({
         autoStart: false,
         measurements: [
+          { type: "latency", numPackets: 1 },
+          { type: "download", bytes: 100_000, count: 1, bypassMinDuration: true },
           { type: "latency", numPackets: 20 },
-          { type: "download", bytes: [1_000_000, 10_000_000], count: 4 },
-          { type: "upload", bytes: [1_000_000, 8_000_000], count: 4 },
+          { type: "download", bytes: 1_000_000, count: 8 },
+          { type: "upload", bytes: 1_000_000, count: 6 },
+          { type: "download", bytes: 10_000_000, count: 6 },
+          { type: "upload", bytes: 10_000_000, count: 4 },
+          { type: "download", bytes: 25_000_000, count: 4 },
+          { type: "upload", bytes: 25_000_000, count: 4 },
+          { type: "download", bytes: 100_000_000, count: 2 },
+          { type: "upload", bytes: 50_000_000, count: 2 },
         ],
       });
       let finishedViaCallback = false;
@@ -176,9 +185,9 @@ export default function SpeedTestPage() {
         setIsRunning(false);
       };
 
-      test.onFinish = () => {
+      test.onFinish = (finalResults) => {
         finishedViaCallback = true;
-        setResults(readResults(test));
+        setResults(readResults({ ...test, results: finalResults ?? test.results }));
         setStatus("Finished");
         setIsRunning(false);
       };
